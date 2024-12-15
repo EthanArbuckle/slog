@@ -9,6 +9,8 @@
 #import <objc/message.h>
 #import <dlfcn.h>
 
+#define VERSION "1.0.0"
+
 static NSString * const kANSIRed     = @"\x1b[31m";
 static NSString * const kANSIGreen   = @"\x1b[32m";
 static NSString * const kANSIYellow  = @"\x1b[33m";
@@ -25,31 +27,59 @@ static NSString * const kDefaultCrashDir = @"/var/mobile/Library/Logs/CrashRepor
 
 static NSRegularExpression *gRegisterRegex = nil;
 
-static NSArray<NSString *> *gHeaderKeys = nil;
-static NSArray<NSString *> *gSystemInfoKeys = nil;
-static NSArray<NSString *> *gExceptionInfoKeys = nil;
+static NSDictionary<NSString *, NSString *> *gHeaderColorMap = nil;
+static NSDictionary<NSString *, NSString *> *gSystemInfoColorMap = nil;
+static NSDictionary<NSString *, NSString *> *gExceptionInfoColorMap = nil;
+static NSDictionary<NSString *, NSString *> *gThreadInfoColorMap = nil;
+static NSDictionary<NSString *, NSString *> *gBinaryImageColorMap = nil;
+
+static NSString *gCurrentSection = nil;
 
 static void initializeStaticData(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        gHeaderKeys = @[@"Incident Identifier", @"Hardware Model",
-                        @"Process", @"Path",
-                        @"Version", @"CrashReporter Key",
-                        @"Code Type", @"Identifier",
-                        @"Role", @"Parent Process",
-                        @"Coalition", @"Date/Time",
-                        @"AppStoreTools"];
+        gHeaderColorMap = @{
+          //  @"Incident Identifier": kANSICyan,
+            @"Hardware Model": kANSICyan,
+            @"Process": kANSICyan,
+            @"Path": kANSICyan,
+            @"Version": kANSICyan,
+//            @"CrashReporter Key": kANSICyan,
+            @"Code Type": kANSICyan,
+//            @"Identifier": kANSICyan,
+//            @"Role": kANSICyan,
+//            @"Parent Process": kANSICyan,
+//            @"Coalition": kANSICyan,
+            @"Date/Time": kANSICyan,
+//            @"AppStoreTools": kANSICyan,
+//            @"Launch Time": kANSICyan
+        };
         
-        gSystemInfoKeys = @[@"OS Version", @"Launch Time",
-                            @"Report Version", @"Release Type"];
-
-        gExceptionInfoKeys = @[@"Exception Type",
-                               @"Exception Subtype",
-                               @"Exception Codes",
-                               @"Termination Description",
-                               @"Termination Reason",
-                               @"Terminating Process",
-                               @"Triggered by Thread"];
+        gSystemInfoColorMap = @{
+            @"OS Version": kANSIGreen,
+//            @"Release Type": kANSIGreen,
+//            @"Report Version": kANSIGreen
+        };
+        
+        gExceptionInfoColorMap = @{
+            @"Exception Type": kANSIRed,
+            @"Exception Subtype": kANSIRed,
+            @"Exception Message": kANSIRed,
+            @"Exception Codes": kANSIRed,
+            @"Termination Reason": kANSIRed,
+            @"Termination Description": kANSIRed,
+            @"Terminating Process": kANSIRed,
+            @"Triggered by Thread": kANSIRed
+        };
+        
+        gThreadInfoColorMap = @{
+            @"Thread": kANSIWhite,
+            @"Thread State": kANSIYellow,
+        };
+        
+        gBinaryImageColorMap = @{
+            @"Binary Images": kANSIYellow
+        };
         
         NSError *error = nil;
         gRegisterRegex = [NSRegularExpression regularExpressionWithPattern:@"^(x\\d+|fp|sp|pc|lr|far|esr|cpsr):" options:0 error:&error];
@@ -59,103 +89,184 @@ static void initializeStaticData(void) {
     });
 }
 
+NSString *identifySectionForKey(NSString *key) {
+    if (gHeaderColorMap[key]) {
+        return @"header";
+    }
+    if (gSystemInfoColorMap[key]) {
+        return @"system";
+    }
+    if (gExceptionInfoColorMap[key]) {
+        return @"exception";
+    }
+    if (gBinaryImageColorMap[key]) {
+        return @"binary";
+    }
+    
+    for (NSString *threadKey in gThreadInfoColorMap) {
+        if ([key hasPrefix:threadKey]) {
+            return @"thread";
+        }
+    }
+
+    return nil;
+}
+
+BOOL shouldPrintLine(NSString *firstComponent, NSString *line) {
+    NSString *newSection = identifySectionForKey(firstComponent);
+    if (newSection) {
+        gCurrentSection = newSection;
+    }
+    
+    if (gCurrentSection) {
+        NSString *section = identifySectionForKey(firstComponent);
+        if ([gCurrentSection isEqualToString:@"header"] && gHeaderColorMap[firstComponent]) {
+            return YES;
+        }
+        if ([gCurrentSection isEqualToString:@"system"] && gSystemInfoColorMap[firstComponent]) {
+            return YES;
+        }
+        if ([gCurrentSection isEqualToString:@"exception"] && gExceptionInfoColorMap[firstComponent]) {
+            return YES;
+        }
+        if ([gCurrentSection isEqualToString:@"binary"] && gBinaryImageColorMap[firstComponent]) {
+            return YES;
+        }
+        if ([gCurrentSection isEqualToString:@"thread"]) {
+            return YES;
+        }
+        
+        if (!section) {
+            return NO;
+        }
+    }
+    return (gCurrentSection && [line hasPrefix:@" "]) || [gRegisterRegex rangeOfFirstMatchInString:line options:0 range:NSMakeRange(0, line.length)].location != NSNotFound;
+}
+
 void printColoredString(NSString *string, NSString *color) {
     printf("%s%s%s", color.UTF8String, string.UTF8String, kANSIReset.UTF8String);
 }
 
-void printFormattedLine(NSString *line) {
+void printFormattedLine(NSString *line, BOOL displayFullLog) {
     if (line.length == 0) {
         printf("\n");
         return;
     }
     
-    NSString *firstComponent = [line componentsSeparatedByString:@": "].firstObject;
-    
-    if ([gHeaderKeys containsObject:firstComponent]) {
-        printColoredString(line, kANSICyan);
-        printf("\n");
+    NSString *firstComponent = [line componentsSeparatedByString:@":"].firstObject;
+    BOOL includeLine = shouldPrintLine(firstComponent, line);
+    if (!displayFullLog && !includeLine) {
         return;
     }
     
-    if ([gSystemInfoKeys containsObject:firstComponent]) {
-        printColoredString(line, kANSIGreen);
-        printf("\n");
-        return;
-    }
+    NSString *color = nil;
+    BOOL isBold = NO;
     
-    if ([gExceptionInfoKeys containsObject:firstComponent]) {
-        printColoredString([NSString stringWithFormat:@"%@%@", kANSIBold, line], kANSIRed);
-        printf("\n");
-        return;
+    if (gHeaderColorMap[firstComponent]) {
+        color = gHeaderColorMap[firstComponent];
     }
-    
-    if ([line hasPrefix:@"Thread"] && [line containsString:@"rashed"]) {
-        printColoredString([NSString stringWithFormat:@"\n%@%@", kANSIBold, line], kANSIWhite);
-        printf("\n");
-        return;
+    else if (gSystemInfoColorMap[firstComponent]) {
+        color = gSystemInfoColorMap[firstComponent];
     }
-    
-    if ([line rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet].location == 0) {
-        NSArray<NSString *> *components = [line componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-        components = [components filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *component, NSDictionary *bindings) {
-            return component.length > 0;
-        }]];
+    else if (gExceptionInfoColorMap[firstComponent]) {
+        color = gExceptionInfoColorMap[firstComponent];
+        isBold = YES;
+    }
+    else if (gCurrentSection && [gCurrentSection isEqualToString:@"thread"]) {
         
-        if (components.count >= 3) {
-            NSString *frameNum = components[0];
-            NSString *library = components[1];
-            NSString *address = components[2];
-            NSString *function = @"";
-            
-            if (components.count > 3) {
-                NSRange range = NSMakeRange(3, components.count - 3);
-                function = [[components subarrayWithRange:range] componentsJoinedByString:@" "];
-            }
-            
-            printf("%s%-3s %s%-30s %s%-20s %s%s%s\n", kANSIYellow.UTF8String, frameNum.UTF8String,  kANSIBlue.UTF8String, library.UTF8String, kANSICyan.UTF8String, address.UTF8String, kANSIGreen.UTF8String, function.UTF8String, kANSIReset.UTF8String);
-            return;
+        // Check if title
+        if ([line hasPrefix:@"Thread"]) {
+            color = gThreadInfoColorMap[@"Thread"];
+            isBold = YES;
+            printf("\n");
         }
-    }
     
-    if ([line hasPrefix:@" "] && [line containsString:@"x"]) {
-        NSString *trimmedLine = [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-        
-        if ([gRegisterRegex firstMatchInString:trimmedLine options:0 range:NSMakeRange(0, trimmedLine.length)]) {
-            NSArray<NSString *> *components = [trimmedLine componentsSeparatedByString:@" "];
+        // Check if line is a stack frame
+        if ([line rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet].location == 0) {
+            NSArray<NSString *> *components = [line componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
             components = [components filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *component, NSDictionary *bindings) {
                 return component.length > 0;
             }]];
             
-            NSMutableString *formattedLine = [NSMutableString string];
-            for (NSString *component in components) {
-                if ([component hasSuffix:@":"]) {
-                    [formattedLine appendFormat:@"%@%-4s%@", kANSICyan, component.UTF8String, kANSIReset];
+            if (components.count >= 3) {
+                NSString *frameNum = components[0];
+                NSString *library = components[1];
+                NSString *address = components[2];
+                NSString *function = @"";
+                
+                if (components.count > 3) {
+                    NSRange range = NSMakeRange(3, components.count - 3);
+                    function = [[components subarrayWithRange:range] componentsJoinedByString:@" "];
                 }
-                else if ([component hasPrefix:@"0x"]) {
-                    [formattedLine appendFormat:@"%@%-18s\t%@", kANSIYellow, component.UTF8String, kANSIReset];
-                }
-                else if ([component containsString:@")"]) {
-                    [formattedLine appendFormat:@"%@%s %@", kANSIGreen, component.UTF8String, kANSIReset];
-                }
-                else {
-                    [formattedLine appendFormat:@"%@%s %@", kANSIWhite, component.UTF8String, kANSIReset];
-                }
+                
+                printf("%s%-3s %s%-30s %s%-20s %s%s%s\n", kANSIYellow.UTF8String, frameNum.UTF8String,  kANSIBlue.UTF8String, library.UTF8String, kANSICyan.UTF8String, address.UTF8String, kANSIGreen.UTF8String, function.UTF8String, kANSIReset.UTF8String);
+                return;
             }
-            printf("   %s\n", formattedLine.UTF8String);
-            return;
+        }
+        
+        // Check if line is a register dump
+        if ([line hasPrefix:@" "] && [line containsString:@"x"]) {
+            NSString *trimmedLine = [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+            
+            if ([gRegisterRegex firstMatchInString:trimmedLine options:0 range:NSMakeRange(0, trimmedLine.length)]) {
+                NSArray<NSString *> *components = [trimmedLine componentsSeparatedByString:@" "];
+                components = [components filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *component, NSDictionary *bindings) {
+                    return component.length > 0;
+                }]];
+                
+                NSMutableString *formattedLine = [NSMutableString string];
+                for (NSString *component in components) {
+                    if ([component hasSuffix:@":"]) {
+                        [formattedLine appendFormat:@"%@%-4s%@", kANSICyan, component.UTF8String, kANSIReset];
+                    }
+                    else if ([component hasPrefix:@"0x"]) {
+                        [formattedLine appendFormat:@"%@%-18s\t%@", kANSIYellow, component.UTF8String, kANSIReset];
+                    }
+                    else if ([component containsString:@")"]) {
+                        [formattedLine appendFormat:@"%@%s %@", kANSIGreen, component.UTF8String, kANSIReset];
+                    }
+                    else {
+                        [formattedLine appendFormat:@"%@%s %@", kANSIWhite, component.UTF8String, kANSIReset];
+                    }
+                }
+                printf("   %s\n", formattedLine.UTF8String);
+                return;
+            }
+            
+            printf("%s\n", line.UTF8String);
         }
     }
-    
-    if ([line hasPrefix:@"Binary Images:"]) {
-        printColoredString([NSString stringWithFormat:@"\n%@%@", kANSIBold, line], kANSIWhite);
+    else if (gCurrentSection && [gCurrentSection isEqualToString:@"binary"]) {
+        color = gBinaryImageColorMap[firstComponent];
+        isBold = YES;
+        // Hide the binary images section unless displayFullLog is set
+        if (!displayFullLog) {
+            return;
+        }
+        
+        if (color) {
+            printf("\n");
+        }
+    }
+
+    if (color) {
+        if (isBold) {
+            line = [NSString stringWithFormat:@"%@%@", kANSIBold, line];
+        }
+        printColoredString(line, color);
         printf("\n");
+        return;
+    }
+    
+    if ([line hasPrefix:@" "] && gCurrentSection) {
+        printf("%s\n", line.UTF8String);
         return;
     }
     
     printf("%s\n", line.UTF8String);
 }
 
-void symbolicateAndPrintCrash(NSString *unsymbolicatedFile) {
+void symbolicateAndPrintCrash(NSString *unsymbolicatedFile, BOOL displayFullLog) {
     if (!unsymbolicatedFile || ![[NSFileManager defaultManager] fileExistsAtPath:unsymbolicatedFile]) {
         printColoredString([NSString stringWithFormat:@"Crash log not found: %@\n", unsymbolicatedFile], kANSIRed);
         return;
@@ -176,7 +287,7 @@ void symbolicateAndPrintCrash(NSString *unsymbolicatedFile) {
     NSArray<NSString *> *lines = [symbolicatedLog componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet];
     for (NSString *line in lines) {
         if (line.length > 0) {
-            printFormattedLine(line);
+            printFormattedLine(line, displayFullLog);
         }
     }
 }
@@ -256,7 +367,10 @@ void printUsage(void) {
     printf("  -l, --list            List recent crash logs. (default: 15)\n");
     printf("  -c  --count <num>     Limit the number of crash logs to list/symbolicate\n");
     printf("  -f, --filter <app>    Filter crashes by process name. Can be used with -l\n");
+    printf("  -a, --all             Display full contents of crash log\n");
+    printf("  -d  --delete          Delete the crash log after displaying it\n");
     printf("  -h, --help            Show this help message\n");
+    printf("  -v, --version         Show version information\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -273,6 +387,8 @@ int main(int argc, char *argv[]) {
         NSString *ipsFile = nil;
         NSString *filterApp = nil;
         BOOL listCrashes = NO;
+        BOOL displayFullLog = NO;
+        BOOL deleteCrashLog = NO;
         NSInteger limit = -1;
         
         for (int i = 1; i < argc; i++) {
@@ -304,6 +420,16 @@ int main(int argc, char *argv[]) {
                     limit = [@(argv[++i]) integerValue];
                 }
             }
+            else if ([arg isEqualToString:@"-a"] || [arg isEqualToString:@"--all"]) {
+                displayFullLog = YES;
+            }
+            else if ([arg isEqualToString:@"-d"] || [arg isEqualToString:@"--delete"]) {
+                deleteCrashLog = YES;
+            }
+            else if ([arg isEqualToString:@"-v"] || [arg isEqualToString:@"--version"]) {
+                printf("slog version %s\n", VERSION);
+                return 0;
+            }
             else {
                 // Check if its a valid file path
                 NSString *unknownOption = @(argv[i]);
@@ -325,7 +451,7 @@ int main(int argc, char *argv[]) {
                 ipsFile = [crashDir stringByAppendingPathComponent:ipsFile];
             }
             
-            symbolicateAndPrintCrash(ipsFile);
+            symbolicateAndPrintCrash(ipsFile, displayFullLog);
             return 0;
         }
         
@@ -349,9 +475,16 @@ int main(int argc, char *argv[]) {
         
         for (NSUInteger i = 0; i < sortedCrashes.count; i++) {
             NSString *crashFilePath = sortedCrashes[i];
-            printColoredString([NSString stringWithFormat:@"Crash log: %@\n\n", crashFilePath], kANSIGreen);
-            symbolicateAndPrintCrash(crashFilePath);
+            printColoredString([NSString stringWithFormat:@"Crash log: %@\n\n", crashFilePath], kANSIWhite);
+            symbolicateAndPrintCrash(crashFilePath, displayFullLog);
             printf("\n");
+            
+            if (deleteCrashLog) {
+                NSError *error = nil;
+                if (![[NSFileManager defaultManager] removeItemAtPath:crashFilePath error:&error]) {
+                    printColoredString([NSString stringWithFormat:@"Failed to delete crash log: %@\n", error.localizedDescription], kANSIRed);
+                }
+            }
         }
     }
     
