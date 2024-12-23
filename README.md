@@ -18,17 +18,24 @@ The tool will automatically:
    - Exception type and details
    - Crashed thread stack trace
 
-Additional options:
 
 ```
+Usage: slog [options] [crash_file]
+  Running without options will display the most recent crash log
+
+Actions:
   -i, --ips <file>      Display a specific crash log
   -l, --list            List recent crash logs. (default: 15)
-  -c  --count <num>     Limit the number of crash logs to list/symbolicate
-  -f, --filter <app>    Filter crashes by process name. Can be used with -l
-  -a, --all             Display full contents of crash log
-  -d  --delete          Delete the crash log after displaying it
+      --show            Print the crash log directory path
+      --clear           Clear all crash logs
   -h, --help            Show this help message
   -v, --version         Show version information
+Options:
+  -a, --all             Display full contents of crash log
+  -n  --limit <num>     Limit the number of crash logs to list/symbolicate
+  -f, --filter <app>    Filter crashes by process name. Can be used with -l
+  -d  --delete          Delete the crash log after displaying it
+  -p  --path <path>      Specify the path to the crash log directory
 ```
 
 ## Output

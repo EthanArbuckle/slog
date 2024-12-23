@@ -9,7 +9,7 @@
 #import <objc/message.h>
 #import <dlfcn.h>
 
-#define VERSION "1.0.0"
+#define VERSION "1.0.1"
 
 static NSString * const kANSIRed     = @"\x1b[31m";
 static NSString * const kANSIGreen   = @"\x1b[32m";
@@ -359,18 +359,45 @@ void listRecentCrashes(NSString *crashDir, NSString *filter, int limit) {
     }];
 }
 
+void clearCrashLogsFromDir(NSString *crashDir) {
+    NSError *error = nil;
+    NSArray<NSString *> *crashFiles = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:crashDir error:&error];
+    if (error) {
+        printColoredString([NSString stringWithFormat:@"Error reading crash directory: %@\n", error.localizedDescription], kANSIRed);
+        return;
+    }
+    
+    int deletedCount = 0;
+    for (NSString *crashFile in crashFiles) {
+        NSString *crashFilePath = [crashDir stringByAppendingPathComponent:crashFile];
+        if (![[NSFileManager defaultManager] removeItemAtPath:crashFilePath error:&error]) {
+            printColoredString([NSString stringWithFormat:@"Failed to delete crash log: %@\n", error.localizedDescription], kANSIRed);
+            continue;
+        }
+        
+        deletedCount++;
+    }
+    
+    printColoredString([NSString stringWithFormat:@"Deleted %d crash logs\n", deletedCount], kANSIGreen);
+}
+
 void printUsage(void) {
     printf("Usage: slog [options] [crash_file]\n");
-    printf("Running without options will display the most recent crash log\n");
-    printf("Options:\n");
+    printf("  Running without options will display the most recent crash log\n\n");
+    printf("Actions:\n");
     printf("  -i, --ips <file>      Display a specific crash log\n");
     printf("  -l, --list            List recent crash logs. (default: 15)\n");
-    printf("  -c  --count <num>     Limit the number of crash logs to list/symbolicate\n");
-    printf("  -f, --filter <app>    Filter crashes by process name. Can be used with -l\n");
-    printf("  -a, --all             Display full contents of crash log\n");
-    printf("  -d  --delete          Delete the crash log after displaying it\n");
+    printf("      --show            Print the crash log directory path\n");
+    printf("      --clear           Clear all crash logs\n");
     printf("  -h, --help            Show this help message\n");
     printf("  -v, --version         Show version information\n");
+    printf("Options:\n");
+    printf("  -a, --all             Display full contents of crash log\n");
+    printf("  -n  --limit <num>     Limit the number of crash logs to list/symbolicate\n");
+    printf("  -f, --filter <app>    Filter crashes by process name. Can be used with -l\n");
+    printf("  -d  --delete          Delete the crash log after displaying it\n");
+    printf("  -p  --path <path>      Specify the path to the crash log directory\n");
+
 }
 
 int main(int argc, char *argv[]) {
@@ -389,6 +416,8 @@ int main(int argc, char *argv[]) {
         BOOL listCrashes = NO;
         BOOL displayFullLog = NO;
         BOOL deleteCrashLog = NO;
+        BOOL clearCrashLogs = NO;
+        BOOL printCrashDir = NO;
         NSInteger limit = -1;
         
         for (int i = 1; i < argc; i++) {
@@ -415,11 +444,6 @@ int main(int argc, char *argv[]) {
                     filterApp = @(argv[++i]);
                 }
             }
-            else if ([arg isEqualToString:@"-c"] || [arg isEqualToString:@"--count"]) {
-                if (i + 1 < argc) {
-                    limit = [@(argv[++i]) integerValue];
-                }
-            }
             else if ([arg isEqualToString:@"-a"] || [arg isEqualToString:@"--all"]) {
                 displayFullLog = YES;
             }
@@ -429,6 +453,26 @@ int main(int argc, char *argv[]) {
             else if ([arg isEqualToString:@"-v"] || [arg isEqualToString:@"--version"]) {
                 printf("slog version %s\n", VERSION);
                 return 0;
+            }
+            else if ([arg isEqualToString:@"--clear"]) {
+                clearCrashLogs = YES;
+            }
+            else if ([arg isEqualToString:@"--show"]) {
+                printCrashDir = YES;
+            }
+            else if ([arg isEqualToString:@"-n"] || [arg isEqualToString:@"--limit"]) {
+                if (i + 1 < argc) {
+                    limit = [@(argv[++i]) integerValue];
+                }
+            }
+            else if ([arg isEqualToString:@"-p"] || [arg isEqualToString:@"--path"]) {
+                if (i + 1 < argc) {
+                    crashDir = @(argv[++i]);
+                    if (![[NSFileManager defaultManager] fileExistsAtPath:crashDir]) {
+                        printColoredString([NSString stringWithFormat:@"Invalid crash log directory: %@\n", crashDir], kANSIRed);
+                        return 1;
+                    }
+                }
             }
             else {
                 // Check if its a valid file path
@@ -442,6 +486,16 @@ int main(int argc, char *argv[]) {
                     filterApp = unknownOption;
                 }
             }
+        }
+        
+        if (printCrashDir) {
+            printColoredString([NSString stringWithFormat:@"Crash log directory: %@\n", crashDir], kANSIWhite);
+            return 0;
+        }
+        
+        if (clearCrashLogs) {
+            clearCrashLogsFromDir(crashDir);
+            return 0;
         }
         
         // Display a specific crash log
