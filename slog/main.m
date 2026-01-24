@@ -69,7 +69,8 @@ static void initializeStaticData(void) {
             @"Termination Reason": kANSIRed,
             @"Termination Description": kANSIRed,
             @"Terminating Process": kANSIRed,
-            @"Triggered by Thread": kANSIRed
+            @"Triggered by Thread": kANSIRed,
+            @"Last Exception Backtrace": kANSIRed,
         };
         
         gThreadInfoColorMap = @{
@@ -272,13 +273,36 @@ void symbolicateAndPrintCrash(NSString *unsymbolicatedFile, BOOL displayFullLog)
         return;
     }
     
-    NSDictionary *transformedXform = ((id (*)(id, SEL, id, id))objc_msgSend)(objc_getClass("OSALegacyXform"), sel_registerName("transformURL:options:"), [NSURL fileURLWithPath:unsymbolicatedFile], nil);
+    NSString *symbolicatedLog = nil;
+
+    Class _OSALegacyXform = objc_getClass("OSALegacyXform");
+    SEL transformURLOptionsSEL = sel_registerName("transformURL:options:");
+    if (![_OSALegacyXform respondsToSelector:transformURLOptionsSEL]) {
+        printColoredString(@"OSALegacyXform does not respond to transformURL:options:\n", kANSIRed);
+        return;
+    }
+    
+    NSDictionary *transformedXform = ((id (*)(id, SEL, id, id))objc_msgSend)(_OSALegacyXform, transformURLOptionsSEL, [NSURL fileURLWithPath:unsymbolicatedFile], nil);
     if (!transformedXform) {
         printColoredString(@"Failed to transform crash log\n", kANSIRed);
         return;
     }
     
-    NSString *symbolicatedLog = transformedXform[@"symbolicated_log"];
+    NSError *error = transformedXform[@"xform-error"];
+    if (error) {
+        if ([error.localizedDescription containsString:@"legacy conversion not supported for log type"]) {
+            // The log is probably already in legacy form
+            symbolicatedLog = [NSString stringWithContentsOfFile:unsymbolicatedFile encoding:NSUTF8StringEncoding error:nil];
+        }
+        else {
+            printColoredString([NSString stringWithFormat:@"Error during transformation: %@\n", error], kANSIRed);
+            return;
+        }
+    }
+    else {
+        symbolicatedLog = transformedXform[@"symbolicated_log"];
+    }
+    
     if (!symbolicatedLog) {
         printColoredString(@"Failed to symbolicate crash log\n", kANSIRed);
         return;
