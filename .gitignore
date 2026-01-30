@@ -1,3 +1,6 @@
 xcuserdata
 *.xcworkspacedata
 xcshareddata
+.theos/
+packages/
+.DS_Store

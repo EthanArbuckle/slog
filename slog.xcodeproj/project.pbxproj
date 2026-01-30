@@ -8,13 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		5F3715F92D09AAED003DF348 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 5F3715F82D09AAED003DF348 /* main.m */; };
+		5FF5F8792F2D3D6B00DF82BD /* entitlements.plist in Resources */ = {isa = PBXBuildFile; fileRef = 5FF5F8782F2D3D6B00DF82BD /* entitlements.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		5F3715F82D09AAED003DF348 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		5FE020792BFA862500D131E0 /* deploy.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; path = deploy.py; sourceTree = "<group>"; };
-		5FE0207B2BFA862B00D131E0 /* entitlements.xml */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = entitlements.xml; sourceTree = "<group>"; };
 		5FE020822BFA86C400D131E0 /* slog.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = slog.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		5FF5F8782F2D3D6B00DF82BD /* entitlements.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = entitlements.plist; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -31,9 +32,9 @@
 		5F85499F2AD9E03E006D8CCD = {
 			isa = PBXGroup;
 			children = (
+				5F3715F82D09AAED003DF348 /* main.m */,
 				5FE020792BFA862500D131E0 /* deploy.py */,
-				5FE0207B2BFA862B00D131E0 /* entitlements.xml */,
-				5FE020832BFA86C400D131E0 /* slog */,
+				5FF5F8782F2D3D6B00DF82BD /* entitlements.plist */,
 				5F8549A92AD9E03E006D8CCD /* Products */,
 			);
 			sourceTree = "<group>";
@@ -44,14 +45,6 @@
 				5FE020822BFA86C400D131E0 /* slog.framework */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		5FE020832BFA86C400D131E0 /* slog */ = {
-			isa = PBXGroup;
-			children = (
-				5F3715F82D09AAED003DF348 /* main.m */,
-			);
-			path = slog;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -123,6 +116,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5FF5F8792F2D3D6B00DF82BD /* entitlements.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

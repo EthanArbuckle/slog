@@ -379,7 +379,7 @@ void listRecentCrashes(NSString *crashDir, NSString *filter, int limit) {
         }
 
         NSString *processName = [[fileNameParts subarrayWithRange:NSMakeRange(0, fileNameParts.count - 4)] componentsJoinedByString:@"-"];
-        printf("%s%lu. %s%s%s - %s (%s)\n", kANSIYellow.UTF8String, idx + 1, kANSIGreen.UTF8String, crashFilePath.UTF8String, kANSIReset.UTF8String, processName.UTF8String, attrs.fileCreationDate.description.UTF8String);
+        printf("%s%lu. %s%s%s - %s (%s)\n", kANSIYellow.UTF8String, (unsigned long)idx + 1, kANSIGreen.UTF8String, crashFilePath.UTF8String, kANSIReset.UTF8String, processName.UTF8String, attrs.fileCreationDate.description.UTF8String);
     }];
 }
 

@@ -79,7 +79,7 @@ def find_host_ldid2_path() -> Path | None:
 
 
 BINARY_DEPLOY_INFO = {
-    "slog": BinaryInstallInformation(Path("usr/bin/slog"), Path("entitlements.xml").resolve()),
+    "slog": BinaryInstallInformation(Path("usr/bin/slog"), Path("entitlements.plist").resolve()),
 }
 
 

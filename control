@@ -1,0 +1,9 @@
+Package: com.ethanarbuckle.slog
+Name: slog
+Version: 1.0.1
+Architecture: iphoneos-arm64
+Description: An awesome tool of some sort!!
+Maintainer: Ethan Arbuckle
+Author: Ethan Arbuckle
+Section: System
+Tag: role::hacker
